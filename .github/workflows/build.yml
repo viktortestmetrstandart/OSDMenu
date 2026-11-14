@@ -25,11 +25,8 @@ jobs:
 
       - name: Compile project
         id: make
-        env:
-          KELFSERVER_API_ADDRESS: ${{ secrets.KELFSERVER_API_ADDRESS }}
-          KELFSERVER_API_KEY: ${{ secrets.KELFSERVER_API_KEY }}
         run: |
-          cmake -B build -DRELEASE=ON
+          cmake -B build
           cmake --build build
 
       - name: Upload artifacts
@@ -38,47 +35,6 @@ jobs:
         with:
           name: artifacts
           path: |
-            build/release/**
-
-  release:
-    needs: [build]
-    runs-on: ubuntu-latest
-    permissions: write-all
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Fetch full clone
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git fetch --prune --unshallow
-
-      - name: Get git describe
-        run: |
-          echo "GIT_VERSION=$(git describe --always --dirty --tags --exclude nightly)" >> $GITHUB_ENV
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Prepare release archive
-        run: |
-          cd artifacts
-          zip -r ../osdmenu-${{ env.GIT_VERSION }}.zip ./*
-
-      - uses: "marvinpinto/action-automatic-releases@latest"
-        if: github.ref == 'refs/heads/main'
-        with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "nightly"
-          prerelease: true
-          title: "Nightly build"
-          files: |
-            osdmenu-${{ env.GIT_VERSION }}.zip
-
-      - uses: "marvinpinto/action-automatic-releases@latest"
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          draft: true
-          files: |
-            osdmenu-${{ env.GIT_VERSION }}.zip
+            build/osdmenu/osdmenu.elf
+            build/hosdmenu/hosdmenu.elf
+            build/launcher/launcher.elf
