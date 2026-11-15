@@ -23,16 +23,19 @@ void showSplash() {
 #endif
 }
 
-// Initializes GS and displays FMCB splash screen
+// Initializes GS and displays splash screen
 void gsDisplaySplash(GSVideoMode mode) {
-  int splashY = 185;
-  if (mode == GS_MODE_PAL) {
-    splashY = 247;
-  }
-
   gsInit(mode);
   gsClearScreen();
-  gsPrintBitmap((640 - splashWidth) / 2, splashY, splashWidth, splashHeight, splash);
+
+  int splashX = ((int)gsGetMaxX() - (int)splashWidth) / 2;
+  int splashY = ((int)gsGetMaxY() - (int)splashHeight) / 2;
+  if (splashX < 0)
+    splashX = 0;
+  if (splashY < 0)
+    splashY = 0;
+
+  gsPrintBitmap(splashX, splashY, splashWidth, splashHeight, splash);
 
   if (!(settings.patcherFlags & FLAG_APP_GAMEID))
     return;
