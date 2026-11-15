@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-char *argv[7] = {0};
+char *argv[8] = {0};
 int argc = 0;
 int LoadELFFromFile(int argc, char *argv[]);
 
