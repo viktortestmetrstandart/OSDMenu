@@ -15,6 +15,7 @@
 
 char *argv[8] = {0};
 int argc = 0;
+static int ps1DirectHint = 0;
 int LoadELFFromFile(int argc, char *argv[]);
 
 // Executes the payload by passing it to the launcher
@@ -30,6 +31,7 @@ void launchPayload(char *payloadPath) {
 
 // Executes selected item by passing it to the launcher
 void launchItem(char *item) {
+  argc = 0;
   DisableIntc(3);
   DisableIntc(2);
 
@@ -84,6 +86,8 @@ void launchItem(char *item) {
 #else // HOSD DKWDRV path is fixed
       argv[argc++] = "-dkwdrv";
 #endif
+      if (ps1DirectHint && (settings.patcherFlags & FLAG_DISABLE_GAMEID))
+        argv[argc++] = "-ps1direct";
     } else {
       // Get OSD config for PS1DRV
       ConfigParam osdConfig;
@@ -110,6 +114,8 @@ void launchItem(char *item) {
   }
 #endif
 
+  ps1DirectHint = 0;
+
   // Execute the launcher
   LoadELFFromFile(argc, argv);
   Exit(-1);
@@ -117,6 +123,12 @@ void launchItem(char *item) {
 
 // Uses the launcher to run the disc
 void launchDisc() { launchItem("cdrom"); }
+
+// Uses the launcher to run PS1 discs (fast path for DKWDRV)
+void launchPS1Disc() {
+  ps1DirectHint = 1;
+  launchItem("cdrom");
+}
 
 // Uses the launcher to run the HDD app
 void launchHDDApplication() {
