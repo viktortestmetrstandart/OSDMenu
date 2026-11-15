@@ -10,9 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/ps2homebrew/ps2homebrew:main
     steps:
-      - name: Install cmake
+      - name: Install dependencies
         run: |
-          apk add cmake
+          apk update
+          apk add --no-cache cmake python3 py3-pillow
 
       - uses: actions/checkout@v4
         with:
@@ -23,10 +24,24 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git fetch --prune --unshallow
 
+      - name: Generate Crash splash header
+        run: |
+          if [ -f patcher/splash.png ]; then
+            python3 utils/scripts/img2splash.py patcher/splash.png patcher/include/splash_bmp.h 320 200
+          elif [ -f patcher/splash.jpg ]; then
+            python3 utils/scripts/img2splash.py patcher/splash.jpg patcher/include/splash_bmp.h 320 200
+          elif [ -f patcher/splash.jpeg ]; then
+            python3 utils/scripts/img2splash.py patcher/splash.jpeg patcher/include/splash_bmp.h 320 200
+          fi
+
       - name: Compile project
         id: make
         run: |
-          cmake -B build
+          if [ -f OSDMENU.CNF ]; then
+            cmake -B build -DPATCHER_CNF_FILE=OSDMENU.CNF
+          else
+            cmake -B build
+          fi
           cmake --build build
 
       - name: Upload artifacts
