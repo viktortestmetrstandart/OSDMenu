@@ -30,12 +30,121 @@ char *getOSDGSMArgument(char *titleID);
 // Works around the CD/DVD loading issue on <70k consoles by cycling the tray
 void applyOSDCdQuirk();
 
+// Checks if console has ROM < 2.00 (<70k models)
+static int isPre70kConsole() {
+  char romver[5] = {0};
+  int fd = open("rom0:ROMVER", O_RDONLY);
+  if (fd < 0)
+    return 1;
+  int n = read(fd, romver, 4);
+  close(fd);
+  if (n < 4)
+    return 1;
+  return strncmp(romver, "0200", 4) < 0;
+}
+
+// Finds DKWDRV.ELF across configured path, HDD, XFROM, or memory cards
+static int resolveDKWDRVPath() {
+  if (settings.dkwdrvPath) {
+    // Only probe directly if path is on already-mounted MC / XFROM / APA
+    if (strncmp(settings.dkwdrvPath, "mc", 2) && strncmp(settings.dkwdrvPath, "xfrom", 5) &&
+        strncmp(settings.dkwdrvPath, "hdd", 3) && strncmp(settings.dkwdrvPath, "pfs", 3))
+      return 0;
+
+    if (!strncmp(settings.dkwdrvPath, "mc?:", 4)) {
+      settings.dkwdrvPath[2] = settings.mcHint + '0';
+      int fd = open(settings.dkwdrvPath, O_RDONLY);
+      if (fd < 0) {
+        settings.dkwdrvPath[2] = (settings.mcHint == 1) ? '0' : '1';
+        fd = open(settings.dkwdrvPath, O_RDONLY);
+      }
+      if (fd >= 0) {
+        close(fd);
+        return 1;
+      }
+    } else {
+      int fd = open(settings.dkwdrvPath, O_RDONLY);
+      if (fd >= 0) {
+        close(fd);
+        return 1;
+      }
+    }
+
+    free(settings.dkwdrvPath);
+    settings.dkwdrvPath = NULL;
+  }
+
+  int fd = -1;
+  if (settings.deviceHint == Device_APA) {
+    deinitPFS();
+    mountPFS(HOSD_SYS_PARTITION);
+    fd = open(PFS_MOUNTPOINT HOSD_DKWDRV_PATH, O_RDONLY);
+    if (fd >= 0)
+      settings.dkwdrvPath = strdup(HOSD_FULL_DKWDRV_PATH);
+  }
+
+  if (fd < 0) {
+    fd = open(XFROM_DKWDRV_PATH, O_RDONLY);
+    if (fd >= 0)
+      settings.dkwdrvPath = strdup(XFROM_DKWDRV_PATH);
+    else {
+      settings.dkwdrvPath = strdup(DKWDRV_PATH);
+      settings.dkwdrvPath[2] = settings.mcHint + '0';
+      if ((fd = open(settings.dkwdrvPath, O_RDONLY)) < 0) {
+        settings.dkwdrvPath[2] = (settings.mcHint == 1) ? '0' : '1';
+        fd = open(settings.dkwdrvPath, O_RDONLY);
+      }
+    }
+  }
+
+  if (fd >= 0) {
+    DPRINTF("CDROM: found DKWDRV at %s\n", settings.dkwdrvPath);
+    close(fd);
+    return 1;
+  }
+
+  if (settings.dkwdrvPath) {
+    free(settings.dkwdrvPath);
+    settings.dkwdrvPath = NULL;
+  }
+  return 0;
+}
+
+// Direct fast launch of DKWDRV.ELF without CDVD init / tray quirk / SYSTEM.CNF parsing
+static int tryLaunchDKWDRVDirect() {
+  int res = -1;
+#ifdef XFROM
+  if (res && (settings.deviceHint == Device_XFROM))
+    res = initModules(Device_XFROM);
+#endif
+#ifdef APA
+  if (res && (settings.deviceHint == Device_APA))
+    res = initModules(Device_APA);
+#endif
+  if (res)
+    res = initModules(Device_MemoryCard);
+  if (res)
+    return res;
+
+  if (!resolveDKWDRVPath())
+    return -ENOENT;
+
+  if (settings.deviceHint == Device_APA)
+    deinitPFS();
+
+  DPRINTF("Starting DKWDRV directly: %s\n", settings.dkwdrvPath);
+  settings.flags |= FLAG_SKIP_ARGV;
+  char *argv[] = {settings.dkwdrvPath, "rom0:PS1DRV"};
+  return launchPath(2, argv);
+}
+
 // Launches the disc while displaying the visual game ID and writing to the history file
 int handleCDROM(int argc, char *argv[]) {
   // Parse arguments
   int displayGameID = 1;
   int useDKWDRV = 0;
   int skipPS2LOGO = 0;
+  int ps1Direct = 0;
   // Nibble 0 — disc speed
   // Nibble 1 — texture smoothing
   int ps1drvFlags = 0;
@@ -58,6 +167,8 @@ int handleCDROM(int argc, char *argv[]) {
       ps1drvFlags |= CDROM_PS1_SMOOTH;
     else if (!strcmp("ps1vneg", arg))
       ps1drvFlags |= CDROM_PS1_VN;
+    else if (!strcmp("ps1direct", arg))
+      ps1Direct = 1;
     else if (!strncmp("dkwdrv", arg, 6)) {
       useDKWDRV = 1;
       dkwdrvPath = strchr(arg, '=');
@@ -66,6 +177,11 @@ int handleCDROM(int argc, char *argv[]) {
         settings.dkwdrvPath = strdup(dkwdrvPath);
       }
     }
+  }
+
+  if (ps1Direct && useDKWDRV && !displayGameID) {
+    if (!tryLaunchDKWDRVDirect())
+      return 0;
   }
 
   return startCDROM(displayGameID, skipPS2LOGO, ps1drvFlags, useDKWDRV, 0);
@@ -113,7 +229,7 @@ int startCDROM(int displayGameID, int skipPS2LOGO, int ps1drvFlags, int useDKWDR
         // Check both memory card slots
         settings.dkwdrvPath = strdup(DKWDRV_PATH);
         settings.dkwdrvPath[2] = settings.mcHint + '0';
-        if ((fd = open(settings.dkwdrvPath, O_RDONLY) < 0)) {
+        if ((fd = open(settings.dkwdrvPath, O_RDONLY)) < 0) {
           settings.dkwdrvPath[2] = (settings.mcHint == 1) ? '0' : '1';
           fd = open(settings.dkwdrvPath, O_RDONLY);
         }
@@ -154,15 +270,17 @@ int startCDROM(int displayGameID, int skipPS2LOGO, int ps1drvFlags, int useDKWDR
   sceCdDiskReady(0);
   int discType = sceCdGetDiskType();
 
+  int didQuirk = 0;
   if ((discType >= SCECdNODISC) && (discType < SCECdUNKNOWN)) {
     msg("\n\nWaiting for disc\n");
     while ((discType >= SCECdNODISC) && (discType < SCECdUNKNOWN)) {
       sleep(1);
       discType = sceCdGetDiskType();
     }
-  } else if (settings.flags & FLAG_BOOT_OSD) {
+  } else if ((settings.flags & FLAG_BOOT_OSD) && isPre70kConsole()) {
     applyOSDCdQuirk();
     sceCdDiskReady(0);
+    didQuirk = 1;
   }
 
   // Make sure the disc is a valid PS1/PS2 disc
@@ -176,6 +294,14 @@ int startCDROM(int displayGameID, int skipPS2LOGO, int ps1drvFlags, int useDKWDR
   // Parse SYSTEM.CNF
   SystemCNFOptions opts = {0};
   discType = parseDiscCNF(&opts);
+  if ((discType < 0 || (!opts.bootPath && discType != ExecType_PS1)) && (settings.flags & FLAG_BOOT_OSD) && !didQuirk) {
+    // Fallback quirk if disc failed to read on boot
+    freeSystemCNFOptions(&opts);
+    memset(&opts, 0, sizeof(opts));
+    applyOSDCdQuirk();
+    sceCdDiskReady(0);
+    discType = parseDiscCNF(&opts);
+  }
   if (discType < 0 || (!opts.bootPath && discType != ExecType_PS1)) {
     freeSystemCNFOptions(&opts);
     msg("CDROM ERROR: Failed to parse SYSTEM.CNF\n");
@@ -319,14 +445,12 @@ char *getOSDGSMArgument(char *titleID) {
   char *titleArg = NULL;
   char lineBuffer[30] = {0};
   char *valuePtr = NULL;
-  while (fgets(lineBuffer, sizeof(lineBuffer), gsmConf)) { // fgets returns NULL if EOF or an error occurs
-    // Find the start of the value
+  while (fgets(lineBuffer, sizeof(lineBuffer), gsmConf)) {
     valuePtr = strchr(lineBuffer, '=');
     if (!valuePtr)
       continue;
     *valuePtr = '\0';
 
-    // Trim whitespace and terminate the value
     do {
       valuePtr++;
     } while (isspace((int)*valuePtr));
@@ -345,7 +469,6 @@ char *getOSDGSMArgument(char *titleID) {
   fclose(gsmConf);
 
   if (titleArg) {
-    // If there's a title-specific argument free the defaultArg and set the defaultArg to titleArg
     if (defaultArg)
       free(defaultArg);
 
