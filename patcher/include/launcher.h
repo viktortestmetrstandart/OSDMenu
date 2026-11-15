@@ -19,6 +19,9 @@ void launchItem(char *item);
 // Uses the launcher to run the disc
 void launchDisc();
 
+// Uses the launcher to run PS1 discs (fast path for DKWDRV)
+void launchPS1Disc();
+
 // Uses the launcher to run the HDD app
 void launchHDDApplication();
 
