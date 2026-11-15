@@ -1,6 +1,7 @@
 // FMCB 1.8 OSDSYS patches by Neme
 // FMCB 1.9 patches by sp193
 #include "patches_fmcb.h"
+#include "gs.h"
 #include "init.h"
 #include "launcher.h"
 #include "patches_common.h"
@@ -245,19 +246,6 @@ void drawMenuItemUnselected(int X, int Y, uint32_t *color, int alpha, const char
 }
 
 // Patches menu drawing functions
-// You can change menu items' color and position for selected and unselected
-// items separately in
-// drawMenuItemSelected()
-// drawMenuItemUnselected()
-//
-// Be careful what you write in these functions as they get called every
-// frame for every menu item!  For positioning the menu, update both
-// functions with the same calculations, using the X/Y variables.
-//
-// Default values of the variables in V12 OSDSYS:
-// X = 430 (this is the center of the menu)
-// Y = 110 (this is the Y of the first item)
-// alpha = 128 (smaller value is more transparency)
 void patchMenuDraw(uint8_t *osd) {
   uint8_t *ptr;
   uint32_t tmp, pSelItem, pUnselItem;
@@ -326,18 +314,11 @@ int ButtonsPanel_Type = 0;
 #define MAINMENU_PANEL 1
 #define SYSCONF_PANEL 8
 
-// getButtonsPanelType() is called prior to functions above and determine panel type :
-// 	- Main menu type : 1
-// 	- Sys conf screen type : 8
 void getButtonsPanelType(int type) {
-  // Get Buttons Panel type (catch it in a0)
   ButtonsPanel_Type = type;
-
-  // Call original function that was overridden
   DrawButtonPanelGetOSDLang();
 }
 
-// drawNonselectableEntryLeft() is called for all items less the last
 void drawNonselectableEntryLeft(int X, int Y, uint32_t *color, int alpha, const char *string) {
   if (ButtonsPanel_Type == MAINMENU_PANEL) {
     if (settings.enterX == -1)
@@ -349,14 +330,12 @@ void drawNonselectableEntryLeft(int X, int Y, uint32_t *color, int alpha, const 
 #ifndef HOSD
     DrawNonSelectableItem(settings.enterX + 28, settings.enterY, color, alpha, string);
 #else
-    // Adding 1 to Y offset to align text with the icon
     DrawNonSelectableItem(settings.enterX + 28, settings.enterY + 1, color, alpha, string);
 #endif
   } else
     DrawNonSelectableItem(X, Y, color, alpha, string);
 }
 
-// drawNonselectableEntryRight() is called only for last item (Options or Version)
 void drawNonselectableEntryRight(int X, int Y, uint32_t *color, int alpha, const char *string) {
   if (ButtonsPanel_Type == MAINMENU_PANEL) {
     if (settings.versionX == -1)
@@ -368,14 +347,12 @@ void drawNonselectableEntryRight(int X, int Y, uint32_t *color, int alpha, const
 #ifndef HOSD
     DrawNonSelectableItem(settings.versionX + 28, settings.versionY, color, alpha, string);
 #else
-    // Adding 1 to Y offset to align text with the icon
     DrawNonSelectableItem(settings.versionX + 28, settings.versionY + 1, color, alpha, string);
 #endif
   } else
     DrawNonSelectableItem(X, Y, color, alpha, string);
 }
 
-// drawIconLeft() is called for all button icons less the last
 void drawIconLeft(int type, int X, int Y, int alpha) {
   if (ButtonsPanel_Type == MAINMENU_PANEL) {
     if (settings.enterX == -1)
@@ -389,7 +366,6 @@ void drawIconLeft(int type, int X, int Y, int alpha) {
     DrawIcon(type, X, Y, alpha);
 }
 
-// drawIconRight() is called for only for last button icon (Options or Version)
 void drawIconRight(int type, int X, int Y, int alpha) {
   if (ButtonsPanel_Type == MAINMENU_PANEL) {
     if (settings.versionX == -1)
@@ -403,17 +379,6 @@ void drawIconRight(int type, int X, int Y, int alpha) {
     DrawIcon(type, X, Y, alpha);
 }
 
-// Patches OSDSYS button prompts
-//
-// OSDSYS defaults are
-// 	- Enter icon X : 188
-// 	- Enter icon Y : 230 on PAL
-// 	- Enter text X : 216
-// 	- Enter text Y : 230 on PAL
-// 	- Version icon X : 501
-// 	- Version icon Y : 230 on PAL
-// 	- Version text X : 529
-// 	- Version text Y : 230 on PAL
 void patchMenuButtonPanel(uint8_t *osd) {
   uint8_t *ptr;
   uint8_t *firstPtr;
@@ -422,7 +387,6 @@ void patchMenuButtonPanel(uint8_t *osd) {
   uint32_t pattern[1];
   uint32_t mask[1];
 
-  // Search and overwrite 1st function call in DrawButtonPanel function
   firstPtr = findPatternWithMask(osd, 0x100000, (uint8_t *)patternDrawButtonPanel_1, (uint8_t *)patternDrawButtonPanel_1_mask,
                                  sizeof(patternDrawButtonPanel_1));
   if (!firstPtr)
@@ -432,97 +396,78 @@ void patchMenuButtonPanel(uint8_t *osd) {
   tmp = _lw(pButtonsPanelType + 32);
   tmp &= 0x03ffffff;
   tmp <<= 2;
-  DrawButtonPanelGetOSDLang = (void *)tmp; // get original function call
+  DrawButtonPanelGetOSDLang = (void *)tmp;
 
   tmp = 0x0c000000;
   tmp |= ((uint32_t)getButtonsPanelType >> 2);
-  _sw(tmp, pButtonsPanelType + 32); // overwrite the function call
+  _sw(tmp, pButtonsPanelType + 32);
 
-  // Search and overwrite 1st DrawIcon function call in DrawButtonPanel function
   ptr = findPatternWithMask(firstPtr, 0x1000, (uint8_t *)patternDrawButtonPanel_2, (uint8_t *)patternDrawButtonPanel_2_mask,
                             sizeof(patternDrawButtonPanel_2));
   if (!ptr)
     return;
-  pBottomRightIcon = (uint32_t)ptr; // code for bottom right icon
+  pBottomRightIcon = (uint32_t)ptr;
 
   tmp = _lw(pBottomRightIcon + 24);
-  addr = tmp; // save function call code
+  addr = tmp;
   tmp &= 0x03ffffff;
   tmp <<= 2;
   DrawIcon = (void *)tmp;
 
   tmp = 0x0c000000;
   tmp |= ((uint32_t)drawIconRight >> 2);
-  _sw(tmp, pBottomRightIcon + 24); // overwrite the function call for bottom right icon
+  _sw(tmp, pBottomRightIcon + 24);
 
-  // Make pattern with function call code saved above
   pattern[0] = addr;
   mask[0] = 0xffffffff;
 
-  // Search and overwrite 2nd DrawIcon function call in DrawButtonPanel function
   ptr = findPatternWithMask(ptr + 28, 0x1000, (uint8_t *)pattern, (uint8_t *)mask, sizeof(pattern));
   if (!ptr)
     return;
-  pBottomLeftIcon = (uint32_t)ptr; // code for bottom left icons
+  pBottomLeftIcon = (uint32_t)ptr;
 
   tmp = 0x0c000000;
   tmp |= ((uint32_t)drawIconLeft >> 2);
-  _sw(tmp, pBottomLeftIcon); // overwrite the function call for bottom left icons
+  _sw(tmp, pBottomLeftIcon);
 
-  // Search and overwrite 1st DrawNonSelectableItem function call in DrawButtonPanel function
   ptr = findPatternWithMask(firstPtr, 0x1000, (uint8_t *)patternDrawButtonPanel_3, (uint8_t *)patternDrawButtonPanel_3_mask,
                             sizeof(patternDrawButtonPanel_3));
   if (!ptr)
     return;
-  pBottomRightItem = (uint32_t)ptr; // code for bottom right item
+  pBottomRightItem = (uint32_t)ptr;
 
-  tmp = _lw(pBottomRightItem + 20); // get the OSD's DrawNonSelectableItem function pointer
-  addr = tmp;                       // save function call code
+  tmp = _lw(pBottomRightItem + 20);
+  addr = tmp;
   tmp &= 0x03ffffff;
   tmp <<= 2;
   DrawNonSelectableItem = (void *)tmp;
 
   tmp = 0x0c000000;
   tmp |= ((uint32_t)drawNonselectableEntryRight >> 2);
-  _sw(tmp, pBottomRightItem + 20); // overwrite the function call for bottom right item
+  _sw(tmp, pBottomRightItem + 20);
 
-  // Make pattern with function call code saved above
   pattern[0] = addr;
   mask[0] = 0xffffffff;
 
-  // Search and overwrite 2nd DrawNonSelectableItem function call in DrawButtonPanel function
   ptr = findPatternWithMask(ptr + 24, 0x1000, (uint8_t *)pattern, (uint8_t *)mask, sizeof(pattern));
   if (!ptr)
     return;
-  pBottomLeftItem = (uint32_t)ptr; // code for bottom left item
+  pBottomLeftItem = (uint32_t)ptr;
 
   tmp = 0x0c000000;
   tmp |= ((uint32_t)drawNonselectableEntryLeft >> 2);
-  _sw(tmp, pBottomLeftItem); // overwrite the function call for bottom left item
+  _sw(tmp, pBottomLeftItem);
 }
 
-// An array that stores what function to call for each disc type.
-// Later PS2 ROMs:
-// uint32_t *discLaunchHandlers[7] = {
-//    exec_ps2_game_disc,		// PS2 game DVD
-//    exec_ps2_game_disc,		// PS2 game CD
-//    exec_ps1_game_disc,		// PS1 game CD
-//    exec_dvdv_disc,			  // DVD Video
-//    do_nothing,				    // none (return 1)
-//    do_nothing,				    // none (return 1)
-//    exec_hdd_stuff			  // HDDLOAD
-//}
-// HDD-OSD:
-// uint32_t *discLaunchHandlers[8] = {
-//    exec_ps2_game_disc,		// PS2 game DVD
-//    exec_ps2_game_disc,		// PS2 game CD
-//    exec_ps1_game_disc,		// PS1 game CD
-//    exec_dvdv_disc,			  // DVD Video
-//    do_nothing,				    // none (return 1)
-//    do_nothing,				    // none (return 1)
-//    exec_hdd_stuff			  // HDDLOAD
-//    exec_hdd_app          // Execute HDD application
-//}
+static void (*origExecDVDV)(void) = NULL;
+
+// Restores GS video mode (480p/1080i syscall hook) before starting DVD-Video / FreeDVDBoot
+void launchDVDV() {
+  restoreGSVideoMode();
+  if (origExecDVDV)
+    origExecDVDV();
+}
+
 // Patches the disc launch handlers to load discs with the launcher
 void patchDiscLaunch(uint8_t *osd) {
   uint8_t *ptr;
@@ -539,9 +484,11 @@ void patchDiscLaunch(uint8_t *osd) {
   tmp += (int16_t)(_lw(pFn + 44) & 0xffff);
   discLaunchHandlers = (uint32_t *)tmp;
 
-  discLaunchHandlers[0] = (uint32_t)launchDisc; // Overwrite PS2 DVD function pointer
-  discLaunchHandlers[1] = (uint32_t)launchDisc; // Overwrite PS2 CD function pointer
-  discLaunchHandlers[2] = (uint32_t)launchDisc; // Overwrite PS1 function pointer
+  discLaunchHandlers[0] = (uint32_t)launchDisc;    // Overwrite PS2 DVD function pointer
+  discLaunchHandlers[1] = (uint32_t)launchDisc;    // Overwrite PS2 CD function pointer
+  discLaunchHandlers[2] = (uint32_t)launchPS1Disc; // Overwrite PS1 function pointer
+  origExecDVDV = (void (*)(void))discLaunchHandlers[3];
+  discLaunchHandlers[3] = (uint32_t)launchDVDV;    // Wrap DVD Video function pointer
 #ifdef HOSD
   discLaunchHandlers[7] = (uint32_t)launchHDDApplication; // Overwrite HDD application function pointer
 #endif
@@ -593,8 +540,8 @@ void patchMenuInfiniteScrolling(uint8_t *osd, int isProtokernel) {
     for (i = 0; i < 9; i++)
       *(dst++) = *(src++);
 
-    addr[10] = addr[-1]; // reload normal pad variable
-    addr[-1] += 8;       // get key repeat variable
+    addr[10] = addr[-1];
+    addr[-1] += 8;
   }
 }
 
@@ -607,9 +554,9 @@ void patchVideoMode(uint8_t *osd, GSVideoMode mode) {
     return;
 
   if (mode == GS_MODE_PAL)
-    _sw(0x24020001, (uint32_t)ptr + 20); // set return value to 1
+    _sw(0x24020001, (uint32_t)ptr + 20);
   else
-    _sw(0x0000102d, (uint32_t)ptr + 20); // set return value to 0 to force NTSC
+    _sw(0x0000102d, (uint32_t)ptr + 20);
 }
 
 #ifndef HOSD
@@ -618,34 +565,25 @@ void patchSkipHDD(uint8_t *osd) {
   uint8_t *ptr;
   uint32_t addr;
 
-  // Search code near MC Update & HDD load
   ptr = findPatternWithMask(osd, 0x100000, (uint8_t *)patternHDDLoad, (uint8_t *)patternHDDLoad_mask, sizeof(patternHDDLoad));
   if (!ptr)
     return;
   addr = (uint32_t)ptr;
 
-  // Place "beq zero, zero, Exit_HddLoad" just after CheckMcUpdate() call
   _sw(0x10000000 + ((signed short)(_lw(addr + 28) & 0xffff) + 5), addr + 8);
 }
 
-//
-// Protokernel patches reverse engineered from FMCB1.9
-// All menu code seems to be located starting from 0x600000
-//
-
-// Patches OSD menu to include custom menu entries
+// Patches OSD menu to include custom menu entries (protokernel)
 void patchMenuProtokernel(uint8_t *osd) {
   uint8_t *ptr;
   uint32_t tmp, menuAddr, entryAddr, i;
 
-  // Try to find the menu info struct
   for (tmp = 0; tmp < 0x100000; tmp = (uint32_t)(ptr - osd + 4)) {
     ptr = findPatternWithMask(osd + PROTOKERNEL_MENU_OFFSET + tmp, 0x100000 - tmp, (uint8_t *)patternMenuInfo_Proto,
                               (uint8_t *)patternMenuInfo_Proto_mask, sizeof(patternMenuInfo_Proto));
     if (!ptr)
       return;
 
-    // Found if the current address points to the pointer to "Browser" string
     if (_lw((uint32_t)ptr) == (uint32_t)ptr - 4 * 8)
       break;
   }
@@ -658,19 +596,17 @@ void patchMenuProtokernel(uint8_t *osd) {
     return;
   entryAddr = (uint32_t)ptr;
 
-  // Patch the user input handling function
   tmp = 0x0c000000;
   tmp |= ((uint32_t)handleMenuEntry >> 2);
-  _sw(tmp, entryAddr + 2 * 4);           // jal    handleMenuEntry
-  tmp = _lw(entryAddr + 3 * 4) & 0xffff; //
-  tmp |= 0x8c440000;                     //
-  _sw(tmp, entryAddr + 3 * 4);           // lw     a0, $xxxx(v0)
-  _sw(0x1040000a, entryAddr + 4 * 4);    // beq    v0, zero, exit
+  _sw(tmp, entryAddr + 2 * 4);
+  tmp = _lw(entryAddr + 3 * 4) & 0xffff;
+  tmp |= 0x8c440000;
+  _sw(tmp, entryAddr + 3 * 4);
+  _sw(0x1040000a, entryAddr + 4 * 4);
 
-  // Build the OSD menu
-  osdMenu[0] = _lw(menuAddr - 4 * 7); // "Browser"
+  osdMenu[0] = _lw(menuAddr - 4 * 7);
   osdMenu[1] = _lw(menuAddr - 4 * 6);
-  osdMenu[2] = _lw(menuAddr - 4 * 4); // "System Configuration"
+  osdMenu[2] = _lw(menuAddr - 4 * 4);
   osdMenu[3] = _lw(menuAddr - 4 * 3);
 
   for (i = 0; i < settings.menuItemCount; i++) {
@@ -681,30 +617,23 @@ void patchMenuProtokernel(uint8_t *osd) {
     osdMenu[5 + i * 2] = (uint32_t)settings.menuItemName[i];
   }
 
-  menuInfo->menuPtr = osdMenu;                       // store menu pointer
-  menuInfo->entryCount = 2 + settings.menuItemCount; // store number of menu items
+  menuInfo->menuPtr = osdMenu;
+  menuInfo->entryCount = 2 + settings.menuItemCount;
 }
 
-// Protokernel drawing functions don't pass anything indicating the entry index.
-// However, s0 register contains menu index
 void drawMenuItemSelectedProtokernel(int X, int Y, uint32_t *color, int alpha, const char *string) {
   int num = 0;
-  asm volatile("move %0, $s0" : "=r"(num)::); // Get menu index from s0 register
-  num *= 8;                                   // Multiply by 8 to align with later OSDSYS behavior
+  asm volatile("move %0, $s0" : "=r"(num)::);
+  num *= 8;
   drawMenuItemSelected(X, Y, color, alpha, string, num);
 }
 void drawMenuItemUnselectedProtokernel(int X, int Y, uint32_t *color, int alpha, const char *string) {
   int num = 0;
-  asm volatile("move %0, $s0" : "=r"(num)::); // Get menu index from s0 register
-  num *= 8;                                   // Multiply by 8 to align with later OSDSYS behavior
+  asm volatile("move %0, $s0" : "=r"(num)::);
+  num *= 8;
   drawMenuItemUnselected(X, Y, color, alpha, string, num);
 }
 
-// Protokernel DrawMenuItem expects a pointer to string address, not the string address
-// ROMs 1.00 and 1.01 differ in how they handle menu item strings.
-// ROM 1.00 seems to use whatever's at the next address for our custom header and footer
-// ROM 1.01 uses the passed address.
-// Support both by passing array address that has both entries pointing to the same string.
 const char *drawMenuItemLanding[2] = {};
 void drawMenuItemProtokernel(int X, int Y, uint32_t *color, int alpha, const char *string) {
   drawMenuItemLanding[0] = string;
@@ -712,7 +641,6 @@ void drawMenuItemProtokernel(int X, int Y, uint32_t *color, int alpha, const cha
   DrawMenuItem(X, Y, color, alpha, (char *)&drawMenuItemLanding);
 }
 
-// Patches menu drawing functions
 void patchMenuDrawProtokernel(uint8_t *osd) {
   uint8_t *ptr;
   uint32_t tmp, pSelItem, pUnselItem;
@@ -720,7 +648,7 @@ void patchMenuDrawProtokernel(uint8_t *osd) {
   vel = settings.cursorMaxVelocity;
   acc = settings.cursorAcceleration;
 
-  settings.displayedItems |= 1; // must be odd value
+  settings.displayedItems |= 1;
   if (settings.displayedItems < 1)
     settings.displayedItems = 1;
   if (settings.displayedItems > 15)
@@ -741,7 +669,7 @@ void patchMenuDrawProtokernel(uint8_t *osd) {
     return;
   pUnselItem = (uint32_t)ptr;
 
-  tmp = _lw(pSelItem + 0x10); // get the OSD's DrawMenuItem function pointer
+  tmp = _lw(pSelItem + 0x10);
   tmp &= 0x03ffffff;
   tmp <<= 2;
   DrawMenuItem = (void *)tmp;
@@ -749,31 +677,18 @@ void patchMenuDrawProtokernel(uint8_t *osd) {
 
   tmp = 0x0c000000;
   tmp |= ((uint32_t)drawMenuItemSelectedProtokernel >> 2);
-  _sw(tmp, pSelItem + 0x10); // overwrite the function call for selected item
+  _sw(tmp, pSelItem + 0x10);
 
   tmp = 0x0c000000;
   tmp |= ((uint32_t)drawMenuItemUnselectedProtokernel >> 2);
-  _sw(tmp, pUnselItem + 0x10); // overwrite the function call for unselected item
+  _sw(tmp, pUnselItem + 0x10);
 
-  // Protokernels use three values per menu entry
-  // Adjust this behavior to match later OSDSYS (two values per entry)
-  // by changing the instruction that increments the string index.
-  tmp = _lw(pUnselItem + 32); // Must be addiu ??,??,0xc
+  tmp = _lw(pUnselItem + 32);
   if ((tmp & 0xff0000ff) == 0x2600000c)
-    _sw((tmp & 0xffffff00) | 0x08, pUnselItem + 32); // Modify to addiu ??,??,0x08
+    _sw((tmp & 0xffffff00) | 0x08, pUnselItem + 32);
 }
 
-// An array that stores what function to call for each disc type.
-// Protokernels:
-// uint32_t *discLaunchHandlers[6] = {
-//    reboot,					      // perform LoadExecPS2(NULL, 0, NULL)
-//    do_nothing,				    // none (return 1)
-//    exec_ps2_game_disc,		// PS2 game DVD
-//    exec_ps2_game_disc,		// PS2 game CD
-//    exec_ps1_game_disc,		// PS1 game CD
-//    exec_dvdv_disc			  // DVD Video
-//}
-// Patches the disc launch handlers to load discs with the launcher
+// Patches the disc launch handlers to load discs with the launcher (protokernel)
 void patchDiscLaunchProtokernel(uint8_t *osd) {
   uint8_t *ptr;
   uint32_t tmp, pFn;
@@ -790,12 +705,13 @@ void patchDiscLaunchProtokernel(uint8_t *osd) {
   tmp += (signed short)(_lw(pFn + 36) & 0xffff);
   discLaunchHandlers = (uint32_t *)tmp;
 
-  discLaunchHandlers[2] = (uint32_t)launchDisc; // Overwrite protokernel PS2 DVD function pointer
-  discLaunchHandlers[3] = (uint32_t)launchDisc; // Overwrite protokernel PS2 CD function pointer
-  discLaunchHandlers[4] = (uint32_t)launchDisc; // Overwrite protokernel PS1 function pointer
+  discLaunchHandlers[2] = (uint32_t)launchDisc;    // Overwrite protokernel PS2 DVD function pointer
+  discLaunchHandlers[3] = (uint32_t)launchDisc;    // Overwrite protokernel PS2 CD function pointer
+  discLaunchHandlers[4] = (uint32_t)launchPS1Disc; // Overwrite protokernel PS1 function pointer
+  origExecDVDV = (void (*)(void))discLaunchHandlers[5];
+  discLaunchHandlers[5] = (uint32_t)launchDVDV;    // Wrap protokernel DVD Video function pointer
 }
 
-// Finds some drawing functions. Unused.
 void patchMenuButtonPanelProtokernel(uint8_t *osd) {
   uint8_t *ptr = findPatternWithMask(osd + PROTOKERNEL_MENU_OFFSET, 0x100000, (uint8_t *)patternDrawButtonPanel_2_Proto,
                                      (uint8_t *)patternDrawButtonPanel_2_Proto_mask, sizeof(patternDrawButtonPanel_2_Proto));
